@@ -1,0 +1,55 @@
+name: Build and Publish OpenCode
+
+on:
+  schedule:
+    # Run daily at 2 AM UTC (night)
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Force rebuild'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  check_version:
+    runs-on: ubuntu-latest
+    outputs:
+      latest_version: ${{ steps.check.outputs.latest_version }}
+      needs_build: ${{ steps.check.outputs.needs_build }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run version check
+        id: check
+        run: sh .github/scripts/check_version.sh "${{ github.repository }}" "${{ github.event.inputs.force }}"
+
+  build:
+    needs: check_version
+    if: needs.check_version.outputs.needs_build == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Build and publish to GHCR
+        uses: macbre/push-to-ghcr@master
+        with:
+          image_name: ${{ github.repository }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          dockerfile: ./ContainerFile
+          extra_args: "--build-arg VERSION=${{ needs.check_version.outputs.latest_version }}"
+
+      - name: Create GitHub tag
+        uses: actions/github-script@v5
+        with:
+          script: |
+            github.rest.git.createRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: 'refs/tags/v${{ needs.check_version.outputs.latest_version }}',
+              sha: context.sha
+            })
