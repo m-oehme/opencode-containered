@@ -1,6 +1,8 @@
 #!/bin/bash
 set -e
 
+cd /workspace
+
 COMMAND="${1:-serve}"
 shift || true
 
